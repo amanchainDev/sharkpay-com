@@ -4,6 +4,9 @@ import { useState } from 'react'
 import { Users, Wallet, Shield, Settings, LogOut, Menu, X, Download, Search, CheckCircle, Clock, AlertCircle, DollarSign } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
+const ADMIN_EMAIL = 'admin@sharkypay.com'
+const DEFAULT_ADMIN_PASSWORD = 'Arriver'
+
 interface Investment {
   id: string
   investor: string
@@ -41,9 +44,12 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'users' | 'shark' | 'settings'>('overview')
   const [mobileMenu, setMobileMenu] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState(DEFAULT_ADMIN_PASSWORD)
   const [authError, setAuthError] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordMessage, setPasswordMessage] = useState('')
+  const [passwordError, setPasswordError] = useState('')
   const [investments, setInvestments] = useState<Investment[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [sharkApps, setSharkApps] = useState<SharkApplication[]>([])
@@ -52,11 +58,25 @@ export default function AdminPage() {
     e.preventDefault()
     setAuthError('')
     const supabase = createClient()
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email: ADMIN_EMAIL, password })
     if (error || !data.user) { setAuthError('Invalid admin credentials.'); return }
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle()
     if (profile?.role !== 'admin') { await supabase.auth.signOut(); setAuthError('This account is not authorized for administration.'); return }
     setAuthenticated(true)
+  }
+
+  const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setPasswordError('')
+    setPasswordMessage('')
+    if (newPassword.length < 8) { setPasswordError('Use at least 8 characters.'); return }
+    if (newPassword !== confirmPassword) { setPasswordError('Passwords do not match.'); return }
+    const { error } = await createClient().auth.updateUser({ password: newPassword })
+    if (error) { setPasswordError('Unable to change password. Please sign in again and retry.'); return }
+    setPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setPasswordMessage('Password changed successfully. Use the new password next time you sign in.')
   }
 
   if (!authenticated) {
@@ -72,8 +92,8 @@ export default function AdminPage() {
             Administration is restricted to accounts with the <strong className="text-[#64f6a5]">admin</strong> role in Supabase.
           </div>
           <form onSubmit={handleLogin} className="flex flex-col gap-3">
-            <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Admin email" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" />
-            <input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" />
+            <label className="text-sm text-slate-300">Admin password</label>
+            <input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter admin password" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" />
             {authError && <p className="text-sm text-red-300">{authError}</p>}
             <button type="submit" className="w-full rounded-full bg-[#64f6a5] px-5 py-3 font-bold text-[#03151a] hover:bg-[#4dd97a]">
               Sign in securely
@@ -127,7 +147,7 @@ export default function AdminPage() {
             </button>
           )}
         </nav>
-        <button onClick={() => { setAuthenticated(false); setPassword('') }} className="hidden gap-2 rounded-full border border-white/15 px-4 py-2 text-sm md:flex items-center">
+        <button onClick={async () => { await createClient().auth.signOut(); setAuthenticated(false); setPassword('') }} className="hidden gap-2 rounded-full border border-white/15 px-4 py-2 text-sm md:flex items-center">
           <LogOut size={16} /> Logout
         </button>
         <button onClick={() => setMobileMenu(!mobileMenu)} className="lg:hidden p-2">
@@ -332,6 +352,17 @@ export default function AdminPage() {
       {activeTab === 'settings' && <section>
         <h1 className="text-4xl font-bold mb-8">Admin Settings</h1>
         <div className="grid gap-6 max-w-2xl">
+          <form onSubmit={changePassword} className="rounded-2xl border border-[#64f6a5]/20 bg-[#64f6a5]/[.04] p-6">
+            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2"><Shield size={20} /> Change admin password</h3>
+            <p className="mb-5 text-sm text-slate-400">Update the password for the hidden admin account securely through Supabase Auth.</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input required minLength={8} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="New password" aria-label="New password" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" />
+              <input required minLength={8} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm new password" aria-label="Confirm new password" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" />
+            </div>
+            {passwordError && <p className="mt-3 text-sm text-red-300">{passwordError}</p>}
+            {passwordMessage && <p className="mt-3 text-sm text-[#64f6a5]">{passwordMessage}</p>}
+            <button type="submit" className="mt-5 rounded-full bg-[#64f6a5] px-5 py-2.5 font-bold text-[#03151a] hover:bg-[#4dd97a]">Change password</button>
+          </form>
           <div className="rounded-2xl border border-white/10 bg-white/[.035] p-6">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Settings size={20} /> Investment Plan Configuration</h3>
             <div className="space-y-4">
