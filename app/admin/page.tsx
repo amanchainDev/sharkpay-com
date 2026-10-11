@@ -69,6 +69,7 @@ export default function AdminPage() {
   const [sharkApps, setSharkApps] = useState<SharkApplication[]>([])
   const [deposits, setDeposits] = useState<DepositRecord[]>([])
   const [reviewingDeposit, setReviewingDeposit] = useState<string | null>(null)
+  const [returnMessage, setReturnMessage] = useState('')
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -89,6 +90,15 @@ export default function AdminPage() {
     const response = await fetch('/api/admin/ledger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'review_deposit', depositId, status, explorerUrl: values.get('explorerUrl'), evidenceNote: values.get('evidenceNote') }) })
     if (response.ok) setDeposits((items) => items.filter((item) => item.id !== depositId))
     setReviewingDeposit(null)
+  }
+
+  const recordReturn = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setReturnMessage('')
+    const values = new FormData(event.currentTarget)
+    const response = await fetch('/api/admin/ledger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'record_return', userId: values.get('userId'), returnAmount: Number(values.get('returnAmount')), asset: values.get('asset'), reference: values.get('reference'), note: values.get('note'), investmentId: values.get('investmentId') || undefined }) })
+    setReturnMessage(response.ok ? 'Verified return recorded.' : 'Return could not be recorded. Check the user ID and ledger details.')
+    if (response.ok) event.currentTarget.reset()
   }
 
   const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -298,7 +308,7 @@ export default function AdminPage() {
 
       {activeTab === 'deposits' && <section>
         <h1 className="text-4xl font-bold mb-3">Deposit Review</h1>
-        <p className="mb-8 max-w-2xl text-slate-400">Deposits remain pending until an administrator verifies the transaction on the correct blockchain explorer. Confirmation credits the investment; rejection does not.</p>
+        <p className="mb-8 max-w-2xl text-slate-400">Deposits remain pending until an administrator verifies the transaction on the correct blockchain explorer. Confirmation credits the investment; rejection does not.</p><form onSubmit={recordReturn} className="mb-8 rounded-2xl border border-[#64f6a5]/20 bg-[#64f6a5]/[.04] p-6"><h2 className="text-xl font-semibold">Record verified return</h2><p className="mt-1 text-sm text-slate-400">Only enter a legitimate, documented return. This creates an auditable ledger entry and changes the investor&apos;s verified balance.</p><div className="mt-4 grid gap-3 md:grid-cols-3"><input required name="userId" placeholder="Investor user ID" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /><input name="investmentId" placeholder="Investment ID (optional)" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /><input required min="0.00000001" step="any" type="number" name="returnAmount" placeholder="Return amount" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /><input required name="asset" placeholder="Asset (e.g. USDT)" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /><input required name="reference" placeholder="Reference / payout tx" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /><input required name="note" placeholder="Evidence note" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /></div><button className="mt-4 rounded-full bg-[#64f6a5] px-5 py-2.5 font-bold text-[#03151a]">Record return</button>{returnMessage && <p className="mt-3 text-sm text-[#64f6a5]">{returnMessage}</p>}</form>
         {deposits.length === 0 ? <div className="rounded-2xl border border-dashed border-white/15 p-8 text-slate-500">No pending deposits. New records will appear here after the migration is applied and deposit records are created.</div> : <div className="grid gap-5">{deposits.map((deposit) => <form key={deposit.id} onSubmit={(event) => { event.preventDefault(); void reviewDeposit(deposit.id, 'confirmed', event.currentTarget) }} className="rounded-2xl border border-white/10 bg-white/[.035] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-lg font-semibold">{deposit.amount} {deposit.asset} on {deposit.chain}</p><p className="mt-1 font-mono text-xs text-slate-500 break-all">{deposit.tx_hash ?? 'Transaction hash not supplied'}</p><p className="mt-2 text-xs text-slate-500">Treasury: {deposit.treasury_address}</p></div><span className="rounded-full bg-amber-400/15 px-3 py-1 text-xs text-amber-200">pending</span></div><div className="mt-5 grid gap-3 md:grid-cols-2"><input required name="explorerUrl" type="url" placeholder="Blockchain explorer URL" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /><input required name="evidenceNote" placeholder="Evidence note: confirmations, block, match" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /></div><div className="mt-4 flex gap-3"><button disabled={reviewingDeposit === deposit.id} type="submit" className="rounded-full bg-[#64f6a5] px-5 py-2.5 font-bold text-[#03151a]">{reviewingDeposit === deposit.id ? 'Saving...' : 'Confirm deposit'}</button><button disabled={reviewingDeposit === deposit.id} type="button" onClick={(event) => { void reviewDeposit(deposit.id, 'rejected', event.currentTarget.form!) }} className="rounded-full border border-red-400/40 px-5 py-2.5 text-red-200">Reject</button></div></form>)}</div>}
       </section>}
 
