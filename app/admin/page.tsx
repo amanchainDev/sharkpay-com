@@ -28,6 +28,20 @@ interface User {
   totalInvested: number
 }
 
+interface DepositRecord {
+  id: string
+  user_id: string
+  chain: string
+  asset: string
+  treasury_address: string
+  tx_hash: string | null
+  explorer_url: string | null
+  amount: number
+  status: 'pending' | 'confirmed' | 'rejected'
+  evidence_note: string | null
+  created_at: string
+}
+
 interface SharkApplication {
   id: string
   name: string
@@ -41,7 +55,7 @@ interface SharkApplication {
 
 export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'users' | 'shark' | 'settings'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'investments' | 'deposits' | 'users' | 'shark' | 'settings'>('overview')
   const [mobileMenu, setMobileMenu] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [password, setPassword] = useState(DEFAULT_ADMIN_PASSWORD)
@@ -53,6 +67,8 @@ export default function AdminPage() {
   const [investments, setInvestments] = useState<Investment[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [sharkApps, setSharkApps] = useState<SharkApplication[]>([])
+  const [deposits, setDeposits] = useState<DepositRecord[]>([])
+  const [reviewingDeposit, setReviewingDeposit] = useState<string | null>(null)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,6 +79,16 @@ export default function AdminPage() {
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle()
     if (profile?.role !== 'admin') { await supabase.auth.signOut(); setAuthError('This account is not authorized for administration.'); return }
     setAuthenticated(true)
+    const pending = await fetch('/api/admin/ledger')
+    if (pending.ok) { const payload = await pending.json(); setDeposits(payload.deposits ?? []) }
+  }
+
+  const reviewDeposit = async (depositId: string, status: 'confirmed' | 'rejected', form: HTMLFormElement) => {
+    setReviewingDeposit(depositId)
+    const values = new FormData(form)
+    const response = await fetch('/api/admin/ledger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'review_deposit', depositId, status, explorerUrl: values.get('explorerUrl'), evidenceNote: values.get('evidenceNote') }) })
+    if (response.ok) setDeposits((items) => items.filter((item) => item.id !== depositId))
+    setReviewingDeposit(null)
   }
 
   const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -137,7 +163,7 @@ export default function AdminPage() {
           </div>
         </div>
         <nav className="hidden gap-6 text-sm lg:flex">
-          {[['overview', 'Overview'], ['investments', 'Investments'], ['users', 'Users'], ['shark', 'SHARK Apps'], ['settings', 'Settings']].map(([tab, label]) =>
+          {[['overview', 'Overview'], ['investments', 'Investments'], ['deposits', 'Deposits'], ['users', 'Users'], ['shark', 'SHARK Apps'], ['settings', 'Settings']].map(([tab, label]) =>
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
@@ -155,7 +181,7 @@ export default function AdminPage() {
         </button>
       </div>
       {mobileMenu && <nav className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 text-sm">
-        {[['overview', 'Overview'], ['investments', 'Investments'], ['users', 'Users'], ['shark', 'SHARK Apps'], ['settings', 'Settings']].map(([tab, label]) =>
+        {[['overview', 'Overview'], ['investments', 'Investments'], ['deposits', 'Deposits'], ['users', 'Users'], ['shark', 'SHARK Apps'], ['settings', 'Settings']].map(([tab, label]) =>
           <button key={tab} onClick={() => { setActiveTab(tab as any); setMobileMenu(false) }} className={activeTab === tab ? 'text-[#64f6a5]' : 'text-slate-400'}>
             {label}
           </button>
@@ -268,6 +294,12 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
+      </section>}
+
+      {activeTab === 'deposits' && <section>
+        <h1 className="text-4xl font-bold mb-3">Deposit Review</h1>
+        <p className="mb-8 max-w-2xl text-slate-400">Deposits remain pending until an administrator verifies the transaction on the correct blockchain explorer. Confirmation credits the investment; rejection does not.</p>
+        {deposits.length === 0 ? <div className="rounded-2xl border border-dashed border-white/15 p-8 text-slate-500">No pending deposits. New records will appear here after the migration is applied and deposit records are created.</div> : <div className="grid gap-5">{deposits.map((deposit) => <form key={deposit.id} onSubmit={(event) => { event.preventDefault(); void reviewDeposit(deposit.id, 'confirmed', event.currentTarget) }} className="rounded-2xl border border-white/10 bg-white/[.035] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-lg font-semibold">{deposit.amount} {deposit.asset} on {deposit.chain}</p><p className="mt-1 font-mono text-xs text-slate-500 break-all">{deposit.tx_hash ?? 'Transaction hash not supplied'}</p><p className="mt-2 text-xs text-slate-500">Treasury: {deposit.treasury_address}</p></div><span className="rounded-full bg-amber-400/15 px-3 py-1 text-xs text-amber-200">pending</span></div><div className="mt-5 grid gap-3 md:grid-cols-2"><input required name="explorerUrl" type="url" placeholder="Blockchain explorer URL" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /><input required name="evidenceNote" placeholder="Evidence note: confirmations, block, match" className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" /></div><div className="mt-4 flex gap-3"><button disabled={reviewingDeposit === deposit.id} type="submit" className="rounded-full bg-[#64f6a5] px-5 py-2.5 font-bold text-[#03151a]">{reviewingDeposit === deposit.id ? 'Saving...' : 'Confirm deposit'}</button><button disabled={reviewingDeposit === deposit.id} type="button" onClick={(event) => { void reviewDeposit(deposit.id, 'rejected', event.currentTarget.form!) }} className="rounded-full border border-red-400/40 px-5 py-2.5 text-red-200">Reject</button></div></form>)}</div>}
       </section>}
 
       {activeTab === 'users' && <section>
